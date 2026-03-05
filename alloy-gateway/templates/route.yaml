@@ -1,0 +1,23 @@
+{{- if .Values.route.hostname }}
+# OpenShift Route — exposes the nginx gateway externally via TLS passthrough.
+# Remove this file or set route.hostname: "" if not using OpenShift.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "alloy-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "alloy-gateway.labels" . | nindent 4 }}
+spec:
+  host: {{ .Values.route.hostname }}
+  port:
+    targetPort: https
+  tls:
+    # nginx terminates TLS; the route passes the connection through unchanged.
+    termination: passthrough
+  to:
+    kind: Service
+    name: {{ include "alloy-gateway.fullname" . }}
+    weight: 100
+  wildcardPolicy: None
+{{- end }}

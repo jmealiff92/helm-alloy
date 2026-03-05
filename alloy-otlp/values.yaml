@@ -1,10 +1,8 @@
 # ===========================================================================
-# Grafana Alloy — library chart default values
+# alloy-otlp — values.yaml
 #
-# This file documents the values contract expected by the shared named
-# templates (alloy.deployment, alloy.service, alloy.configmap).
-# Child charts (alloy-otlp, alloy-prom, alloy-discovery) override these
-# in their own values.yaml.
+# Grafana Alloy configured as an OTLP receiver.
+# The alloy-gateway nginx routes /otlp/* to this chart's service on port 4318.
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -16,8 +14,7 @@ image:
   pullPolicy: IfNotPresent
 
 # ---------------------------------------------------------------------------
-# Alloy River config
-# The configmap template renders this as config.alloy inside a ConfigMap.
+# Alloy River config — OTLP receiver
 # ---------------------------------------------------------------------------
 config:
   content: |-
@@ -26,9 +23,26 @@ config:
       format = "logfmt"
     }
 
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+
+      output {
+        metrics = [otelcol.exporter.otlp.default.input]
+        logs    = [otelcol.exporter.otlp.default.input]
+        traces  = [otelcol.exporter.otlp.default.input]
+      }
+    }
+
+    otelcol.exporter.otlp "default" {
+      client {
+        endpoint = "http://otel-collector:4317"
+        tls { insecure = true }
+      }
+    }
+
 # ---------------------------------------------------------------------------
-# Pod identity
-# Leave empty to use the namespace default ServiceAccount.
+# Pod identity — uses namespace default ServiceAccount
 # ---------------------------------------------------------------------------
 serviceAccountName: ""
 
@@ -45,11 +59,10 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# Storage path for Alloy's WAL / internal state
 storagePath: /var/lib/alloy
 
 # ---------------------------------------------------------------------------
-# Service (ClusterIP)
+# Service — ClusterIP (gateway proxies to these ports)
 # ---------------------------------------------------------------------------
 service:
   type: ClusterIP
@@ -57,6 +70,14 @@ service:
     - name: alloy-ui
       port: 12345
       targetPort: 12345
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
       protocol: TCP
 
 # ---------------------------------------------------------------------------
@@ -77,14 +98,8 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Extra args appended to the Alloy run command.
-# e.g. when nginx is proxying the UI under a subpath:
-#   extraArgs:
-#     - --server.http.ui-path-prefix=/debug/
 extraArgs: []
 
-# Go runtime tuning — GOMAXPROCS is wired to limits.cpu via the downward API
-# so Go doesn't over-schedule goroutines against the CPU limit.
 extraEnv:
   - name: GOMAXPROCS
     valueFrom:

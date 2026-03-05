@@ -1,0 +1,13 @@
+apiVersion: v2
+name: alloy-prom
+description: >
+  Grafana Alloy configured as a Prometheus remote write receiver (port 9009).
+  Routes to this chart from the alloy-gateway nginx via /prometheus/api/v1/push.
+  Sources the alloy library chart for shared Deployment/Service/ConfigMap templates.
+type: application
+version: 0.1.0
+appVersion: "1.7.0"
+dependencies:
+  - name: alloy
+    version: 0.1.0
+    repository: file://../alloy-chart

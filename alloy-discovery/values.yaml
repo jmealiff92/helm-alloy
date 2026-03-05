@@ -1,0 +1,142 @@
+# ===========================================================================
+# alloy-discovery — values.yaml
+#
+# Grafana Alloy configured for Kubernetes service discovery and scraping
+# within its own namespace. This instance does NOT receive remote data from
+# the gateway — it actively scrapes targets discovered via the Kubernetes API.
+#
+# RBAC note: A namespace-scoped Role is used here, which allows discovery of
+# pods, services, and endpoints within this namespace. If you need to scrape
+# targets across ALL namespaces or access cluster-scoped resources (e.g.
+# nodes), replace rbac.kind: Role with ClusterRole and the binding accordingly.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: grafana/alloy
+  tag: "v1.7.0"
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Alloy River config — Kubernetes service discovery + scrape
+# ---------------------------------------------------------------------------
+config:
+  content: |-
+    logging {
+      level  = "info"
+      format = "logfmt"
+    }
+
+    // ── Pod discovery ────────────────────────────────────────────────────────
+    discovery.kubernetes "pods" {
+      role = "pod"
+      // Scoped to the deployment namespace by default (no cluster-wide access needed)
+    }
+
+    // ── Service discovery ────────────────────────────────────────────────────
+    discovery.kubernetes "services" {
+      role = "service"
+    }
+
+    // ── Scrape discovered targets ────────────────────────────────────────────
+    prometheus.scrape "kubernetes" {
+      targets = concat(
+        discovery.kubernetes.pods.targets,
+        discovery.kubernetes.services.targets,
+      )
+
+      scrape_interval = "30s"
+
+      forward_to = [prometheus.remote_write.default.receiver]
+    }
+
+    // ── Forward scraped metrics ──────────────────────────────────────────────
+    prometheus.remote_write "default" {
+      endpoint {
+        // Override url in values.yaml to point at your Prometheus / Mimir / Thanos
+        url = "http://prometheus:9090/api/v1/write"
+      }
+    }
+
+# ---------------------------------------------------------------------------
+# Pod identity — uses the dedicated ServiceAccount created by this chart
+# Set to "" to use the namespace default (disables RBAC templates below).
+# ---------------------------------------------------------------------------
+serviceAccountName: alloy-discovery
+
+# ---------------------------------------------------------------------------
+# Deployment
+# ---------------------------------------------------------------------------
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+storagePath: /var/lib/alloy
+
+# ---------------------------------------------------------------------------
+# Service — ClusterIP (UI access only; no gateway routing for this instance)
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    - name: alloy-ui
+      port: 12345
+      targetPort: 12345
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# RBAC
+# Controls creation of ServiceAccount, Role, and RoleBinding.
+# Set enabled: false if you manage RBAC externally.
+# ---------------------------------------------------------------------------
+rbac:
+  enabled: true
+  # Namespace-scoped access: pods, services, endpoints, configmaps.
+  # Alloy's discovery.kubernetes component uses the Kubernetes watch API.
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "endpoints", "configmaps", "namespaces"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses"]
+      verbs: ["get", "list", "watch"]
+
+# ---------------------------------------------------------------------------
+# Pod extras
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 473
+  runAsGroup: 473
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraArgs: []
+
+extraEnv:
+  - name: GOMAXPROCS
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.cpu
+
+extraVolumes: []
+extraVolumeMounts: []
