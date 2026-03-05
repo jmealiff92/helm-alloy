@@ -1,36 +1,37 @@
+{{- if .Values.nginx.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "nginx.fullname" . }}
+  name: {{ include "alloy.nginx.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "nginx.labels" . | nindent 4 }}
+    {{- include "alloy.nginx.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.nginx.replicaCount }}
   selector:
     matchLabels:
-      {{- include "nginx.selectorLabels" . | nindent 6 }}
+      {{- include "alloy.nginx.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
-        checksum/config: {{ .Values.nginxConfig | sha256sum }}
-        {{- with .Values.vaultAnnotations }}
+        checksum/config: {{ .Values.nginx.nginxConfig | sha256sum }}
+        {{- with .Values.nginx.vaultAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.podAnnotations }}
+        {{- with .Values.nginx.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "nginx.selectorLabels" . | nindent 8 }}
+        {{- include "alloy.nginx.selectorLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.serviceAccountName }}
-      serviceAccountName: {{ .Values.serviceAccountName }}
+      {{- if .Values.nginx.serviceAccountName }}
+      serviceAccountName: {{ .Values.nginx.serviceAccountName }}
       {{- end }}
 
       volumes:
         - name: config
           configMap:
-            name: {{ include "nginx.fullname" . }}-config
+            name: {{ include "alloy.nginx.fullname" . }}-config
         # nginx needs to write pid and temp files — emptyDirs satisfy
         # readOnlyRootFilesystem while giving nginx what it needs
         - name: nginx-run
@@ -42,18 +43,18 @@ spec:
 
       containers:
         - name: nginx
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
 
           ports:
-            {{- range .Values.service.ports }}
+            {{- range .Values.nginx.service.ports }}
             - name: {{ .name }}
               containerPort: {{ .targetPort }}
               protocol: {{ .protocol }}
             {{- end }}
 
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml .Values.nginx.securityContext | nindent 12 }}
 
           volumeMounts:
             - name: config
@@ -69,7 +70,7 @@ spec:
               mountPath: /tmp
 
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.nginx.resources | nindent 12 }}
 
           readinessProbe:
             httpGet:
@@ -87,15 +88,16 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 20
 
-      {{- with .Values.nodeSelector }}
+      {{- with .Values.nginx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.nginx.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.nginx.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

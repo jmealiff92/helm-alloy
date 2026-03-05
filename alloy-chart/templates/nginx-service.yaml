@@ -1,0 +1,20 @@
+{{- if .Values.nginx.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "alloy.nginx.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "alloy.nginx.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.nginx.service.type }}
+  selector:
+    {{- include "alloy.nginx.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- range .Values.nginx.service.ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: {{ .protocol }}
+    {{- end }}
+{{- end }}
