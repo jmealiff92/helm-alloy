@@ -1,0 +1,12 @@
+{{- if .Values.nginx.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "alloy.nginx.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "alloy.nginx.labels" . | nindent 4 }}
+data:
+  nginx.conf: |-
+    {{- tpl .Values.nginx.nginxConfig . | nindent 4 }}
+{{- end }}
