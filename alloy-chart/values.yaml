@@ -1,0 +1,143 @@
+# ===========================================================================
+# Grafana Alloy — values.yaml
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: grafana/alloy
+  tag: "v1.7.0"
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Alloy River config
+# The chart always creates a ConfigMap from this content.
+# ---------------------------------------------------------------------------
+config:
+  content: |-
+    logging {
+      level  = "info"
+      format = "logfmt"
+    }
+
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+
+      output {
+        metrics = [otelcol.exporter.otlp.default.input]
+        logs    = [otelcol.exporter.otlp.default.input]
+        traces  = [otelcol.exporter.otlp.default.input]
+      }
+    }
+
+    otelcol.exporter.otlp "default" {
+      client {
+        endpoint = "http://otel-collector:4317"
+        tls { insecure = true }
+      }
+    }
+
+# ---------------------------------------------------------------------------
+# Pod identity
+# Leave empty to use the namespace default ServiceAccount.
+# ---------------------------------------------------------------------------
+serviceAccountName: ""
+
+# ---------------------------------------------------------------------------
+# Deployment
+# ---------------------------------------------------------------------------
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Storage path for Alloy's WAL / internal state
+storagePath: /var/lib/alloy
+
+# ---------------------------------------------------------------------------
+# Service (ClusterIP — nginx handles external routing)
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    - name: alloy-ui
+      port: 12345
+      targetPort: 12345
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# Pod extras
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 473
+  runAsGroup: 473
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# Go runtime / Alloy performance environment variables
+#
+# GOMAXPROCS: Without this, Go sees ALL node CPUs and spawns that many OS
+#   threads, causing massive context switching under CPU limits. This wires
+#   it directly to your limits.cpu via the Kubernetes downward API.
+#
+# GOMEMLIMIT: Alloy already auto-sets this to 90% of the cgroup limit via
+#   its built-in automemlimit module, so you usually do not need to set it.
+#   Two commented-out options are provided if you want explicit control.
+#   Rule of thumb: ~90% of limits.memory (e.g. 460MiB for a 512Mi limit).
+#
+# GOGC: GC target percentage (default 100). Lower = more frequent GC =
+#   lower peak memory but higher CPU. Tune only with profiling data.
+#
+# AUTOMEMLIMIT: Ratio used by the built-in automemlimit (default 0.9).
+#   Only relevant when GOMEMLIMIT is not set explicitly.
+# ---------------------------------------------------------------------------
+# Extra args appended to the Alloy run command
+# e.g. when nginx is proxying the UI under a subpath:
+# extraArgs:
+#   - --server.http.ui-path-prefix=/debug/
+extraArgs: []
+
+extraEnv:
+  - name: GOMAXPROCS
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.cpu
+  # Uncomment ONE of the GOMEMLIMIT options below for explicit control:
+  # - name: GOMEMLIMIT
+  #   valueFrom:
+  #     resourceFieldRef:
+  #       resource: limits.memory   # 100% of limit - prefer manual value
+  # - name: GOMEMLIMIT
+  #   value: "460MiB"               # ~90% of a 512Mi limit
+  # - name: GOGC
+  #   value: "100"
+  # - name: AUTOMEMLIMIT
+  #   value: "0.9"
+
+extraVolumes: []
+extraVolumeMounts: []

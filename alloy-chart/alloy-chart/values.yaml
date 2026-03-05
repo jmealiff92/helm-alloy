@@ -1,0 +1,103 @@
+# ===========================================================================
+# Grafana Alloy — values.yaml
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: grafana/alloy
+  tag: "v1.7.0"
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Alloy River config
+# The chart always creates a ConfigMap from this content.
+# ---------------------------------------------------------------------------
+config:
+  content: |-
+    logging {
+      level  = "info"
+      format = "logfmt"
+    }
+
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+
+      output {
+        metrics = [otelcol.exporter.otlp.default.input]
+        logs    = [otelcol.exporter.otlp.default.input]
+        traces  = [otelcol.exporter.otlp.default.input]
+      }
+    }
+
+    otelcol.exporter.otlp "default" {
+      client {
+        endpoint = "http://otel-collector:4317"
+        tls { insecure = true }
+      }
+    }
+
+# ---------------------------------------------------------------------------
+# Pod identity
+# Leave empty to use the namespace default ServiceAccount.
+# ---------------------------------------------------------------------------
+serviceAccountName: ""
+
+# ---------------------------------------------------------------------------
+# Deployment
+# ---------------------------------------------------------------------------
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Storage path for Alloy's WAL / internal state
+storagePath: /var/lib/alloy
+
+# ---------------------------------------------------------------------------
+# Service (ClusterIP — nginx handles external routing)
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    - name: alloy-ui
+      port: 12345
+      targetPort: 12345
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# Pod extras
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 473
+  runAsGroup: 473
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
