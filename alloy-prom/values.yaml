@@ -7,6 +7,14 @@
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
+# Sub-chart (alloy) passthrough values
+# enabled: false suppresses the base alloy-chart's own Deployment/Service/
+# ConfigMap/Route so only this chart's templates render them (via named templates).
+# ---------------------------------------------------------------------------
+alloy:
+  enabled: false
+
+# ---------------------------------------------------------------------------
 # Image
 # ---------------------------------------------------------------------------
 image:

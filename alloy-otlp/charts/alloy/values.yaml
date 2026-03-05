@@ -1,11 +1,22 @@
 # ===========================================================================
-# Grafana Alloy — library chart default values
+# Grafana Alloy — values.yaml
 #
-# This file documents the values contract expected by the shared named
-# templates (alloy.deployment, alloy.service, alloy.configmap).
-# Child charts (alloy-otlp, alloy-prom, alloy-discovery) override these
-# in their own values.yaml.
+# Deployable standalone and reusable as a dependency by child charts.
+#
+# Standalone:  helm install my-alloy ./alloy-chart
+#              enabled: true  → Deployment + Service + optional Route rendered.
+#
+# As sub-chart: child chart sets  alloy.enabled: false  in its own values.yaml
+#              to suppress these resources while still calling the shared named
+#              templates (alloy.deployment, alloy.service, alloy.configmap).
 # ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Render this chart's own Deployment, Service, ConfigMap, and Route.
+# Set to false when this chart is sourced as a dependency by alloy-otlp,
+# alloy-prom, or alloy-discovery to avoid duplicate resource creation.
+# ---------------------------------------------------------------------------
+enabled: true
 
 # ---------------------------------------------------------------------------
 # Image
@@ -24,6 +35,24 @@ config:
     logging {
       level  = "info"
       format = "logfmt"
+    }
+
+    otelcol.receiver.otlp "default" {
+      grpc { endpoint = "0.0.0.0:4317" }
+      http { endpoint = "0.0.0.0:4318" }
+
+      output {
+        metrics = [otelcol.exporter.otlp.default.input]
+        logs    = [otelcol.exporter.otlp.default.input]
+        traces  = [otelcol.exporter.otlp.default.input]
+      }
+    }
+
+    otelcol.exporter.otlp "default" {
+      client {
+        endpoint = "http://otel-collector:4317"
+        tls { insecure = true }
+      }
     }
 
 # ---------------------------------------------------------------------------
@@ -58,6 +87,28 @@ service:
       port: 12345
       targetPort: 12345
       protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# OpenShift Route (optional)
+# Exposes Alloy directly without a separate nginx gateway.
+# TLS is terminated at the OpenShift router (edge termination) because
+# the Alloy HTTP server does not do TLS on its own.
+# ---------------------------------------------------------------------------
+route:
+  enabled: false
+  hostname: ""
+  # termination: edge | reencrypt | passthrough
+  termination: edge
+  # targetPort matches one of the service port names above
+  targetPort: alloy-ui
 
 # ---------------------------------------------------------------------------
 # Pod extras
