@@ -1,0 +1,20 @@
+{{- if .Values.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "alloy.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "alloy.labels" . | nindent 4 }}
+spec:
+  host: {{ .Values.route.hostname }}
+  port:
+    targetPort: {{ .Values.route.targetPort }}
+  tls:
+    termination: {{ .Values.route.termination }}
+  to:
+    kind: Service
+    name: {{ include "alloy.fullname" . }}
+    weight: 100
+  wildcardPolicy: None
+{{- end }}

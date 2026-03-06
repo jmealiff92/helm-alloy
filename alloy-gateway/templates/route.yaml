@@ -1,20 +1,20 @@
-{{- if .Values.nginx.enabled }}
+{{- if .Values.route.hostname }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: {{ include "alloy.nginx.fullname" . }}
+  name: {{ include "alloy-gateway.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "alloy.nginx.labels" . | nindent 4 }}
+    {{- include "alloy-gateway.labels" . | nindent 4 }}
 spec:
-  host: {{ .Values.nginx.route.hostname }}
+  host: {{ .Values.route.hostname }}
   port:
     targetPort: https
   tls:
     termination: passthrough
   to:
     kind: Service
-    name: {{ include "alloy.nginx.fullname" . }}
+    name: {{ include "alloy-gateway.fullname" . }}
     weight: 100
   wildcardPolicy: None
 {{- end }}

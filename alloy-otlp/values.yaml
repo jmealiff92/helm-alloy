@@ -1,0 +1,47 @@
+# ===========================================================================
+# alloy-otlp — values.yaml
+#
+# Overrides for the alloy sub-chart. All keys live under alloy: to match
+# the dependency name declared in Chart.yaml.
+# ===========================================================================
+alloy:
+  config:
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      otelcol.receiver.otlp "default" {
+        grpc { endpoint = "0.0.0.0:4317" }
+        http { endpoint = "0.0.0.0:4318" }
+
+        output {
+          metrics = [otelcol.exporter.otlp.default.input]
+          logs    = [otelcol.exporter.otlp.default.input]
+          traces  = [otelcol.exporter.otlp.default.input]
+        }
+      }
+
+      otelcol.exporter.otlp "default" {
+        client {
+          endpoint = "http://otel-collector:4317"
+          tls { insecure = true }
+        }
+      }
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: alloy-ui
+        port: 12345
+        targetPort: 12345
+        protocol: TCP
+      - name: otlp-grpc
+        port: 4317
+        targetPort: 4317
+        protocol: TCP
+      - name: otlp-http
+        port: 4318
+        targetPort: 4318
+        protocol: TCP

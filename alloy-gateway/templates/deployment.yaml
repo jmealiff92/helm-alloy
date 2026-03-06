@@ -1,39 +1,36 @@
-{{- if .Values.nginx.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "alloy.nginx.fullname" . }}
+  name: {{ include "alloy-gateway.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "alloy.nginx.labels" . | nindent 4 }}
+    {{- include "alloy-gateway.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.nginx.replicaCount }}
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "alloy.nginx.selectorLabels" . | nindent 6 }}
+      {{- include "alloy-gateway.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
-        checksum/config: {{ .Values.nginx.nginxConfig | sha256sum }}
-        {{- with .Values.nginx.vaultAnnotations }}
+        checksum/config: {{ .Values.nginxConfig | sha256sum }}
+        {{- with .Values.vaultAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.nginx.podAnnotations }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "alloy.nginx.selectorLabels" . | nindent 8 }}
+        {{- include "alloy-gateway.selectorLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.nginx.serviceAccountName }}
-      serviceAccountName: {{ .Values.nginx.serviceAccountName }}
+      {{- if .Values.serviceAccountName }}
+      serviceAccountName: {{ .Values.serviceAccountName }}
       {{- end }}
 
       volumes:
         - name: config
           configMap:
-            name: {{ include "alloy.nginx.fullname" . }}-config
-        # nginx needs to write pid and temp files — emptyDirs satisfy
-        # readOnlyRootFilesystem while giving nginx what it needs
+            name: {{ include "alloy-gateway.fullname" . }}-config
         - name: nginx-run
           emptyDir: {}
         - name: nginx-cache
@@ -43,35 +40,29 @@ spec:
 
       containers:
         - name: nginx
-          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
-          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
-
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            {{- range .Values.nginx.service.ports }}
+            {{- range .Values.service.ports }}
             - name: {{ .name }}
               containerPort: {{ .targetPort }}
               protocol: {{ .protocol }}
             {{- end }}
-
           securityContext:
-            {{- toYaml .Values.nginx.securityContext | nindent 12 }}
-
+            {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
               readOnly: true
-            # Vault injects secrets here at pod start via init container
             - name: nginx-run
               mountPath: /var/run
             - name: nginx-cache
               mountPath: /var/cache/nginx
             - name: nginx-tmp
               mountPath: /tmp
-
           resources:
-            {{- toYaml .Values.nginx.resources | nindent 12 }}
-
+            {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /healthz
@@ -79,7 +70,6 @@ spec:
               scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
-
           livenessProbe:
             httpGet:
               path: /healthz
@@ -88,16 +78,15 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 20
 
-      {{- with .Values.nginx.nodeSelector }}
+      {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nginx.affinity }}
+      {{- with .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nginx.tolerations }}
+      {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- end }}

@@ -1,5 +1,9 @@
 # ===========================================================================
 # Grafana Alloy — values.yaml
+#
+# Standalone:   helm install my-alloy ./alloy-chart
+# As sub-chart: child chart declares this as a dependency and overrides
+#               values under the alloy: key in its own values.yaml.
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -13,6 +17,7 @@ image:
 # ---------------------------------------------------------------------------
 # Alloy River config
 # The chart always creates a ConfigMap from this content.
+# Override config.content in the child chart's values under alloy.config.content
 # ---------------------------------------------------------------------------
 config:
   content: |-
@@ -42,6 +47,7 @@ config:
 # ---------------------------------------------------------------------------
 # Pod identity
 # Leave empty to use the namespace default ServiceAccount.
+# When set, a ServiceAccount is created with this name.
 # ---------------------------------------------------------------------------
 serviceAccountName: ""
 
@@ -62,7 +68,7 @@ resources:
 storagePath: /var/lib/alloy
 
 # ---------------------------------------------------------------------------
-# Service (ClusterIP — nginx handles external routing)
+# Service (ClusterIP)
 # ---------------------------------------------------------------------------
 service:
   type: ClusterIP
@@ -79,6 +85,24 @@ service:
       port: 4318
       targetPort: 4318
       protocol: TCP
+
+# ---------------------------------------------------------------------------
+# OpenShift Route (optional)
+# ---------------------------------------------------------------------------
+route:
+  enabled: false
+  hostname: ""
+  termination: edge
+  targetPort: alloy-ui
+
+# ---------------------------------------------------------------------------
+# RBAC
+# Creates a namespace-scoped Role and RoleBinding for the ServiceAccount.
+# Only takes effect when serviceAccountName is also set.
+# ---------------------------------------------------------------------------
+rbac:
+  enabled: false
+  rules: []
 
 # ---------------------------------------------------------------------------
 # Pod extras
@@ -98,28 +122,7 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# ---------------------------------------------------------------------------
-# Go runtime / Alloy performance environment variables
-#
-# GOMAXPROCS: Without this, Go sees ALL node CPUs and spawns that many OS
-#   threads, causing massive context switching under CPU limits. This wires
-#   it directly to your limits.cpu via the Kubernetes downward API.
-#
-# GOMEMLIMIT: Alloy already auto-sets this to 90% of the cgroup limit via
-#   its built-in automemlimit module, so you usually do not need to set it.
-#   Two commented-out options are provided if you want explicit control.
-#   Rule of thumb: ~90% of limits.memory (e.g. 460MiB for a 512Mi limit).
-#
-# GOGC: GC target percentage (default 100). Lower = more frequent GC =
-#   lower peak memory but higher CPU. Tune only with profiling data.
-#
-# AUTOMEMLIMIT: Ratio used by the built-in automemlimit (default 0.9).
-#   Only relevant when GOMEMLIMIT is not set explicitly.
-# ---------------------------------------------------------------------------
 # Extra args appended to the Alloy run command
-# e.g. when nginx is proxying the UI under a subpath:
-# extraArgs:
-#   - --server.http.ui-path-prefix=/debug/
 extraArgs: []
 
 extraEnv:
@@ -127,186 +130,6 @@ extraEnv:
     valueFrom:
       resourceFieldRef:
         resource: limits.cpu
-  # Uncomment ONE of the GOMEMLIMIT options below for explicit control:
-  # - name: GOMEMLIMIT
-  #   valueFrom:
-  #     resourceFieldRef:
-  #       resource: limits.memory   # 100% of limit - prefer manual value
-  # - name: GOMEMLIMIT
-  #   value: "460MiB"               # ~90% of a 512Mi limit
-  # - name: GOGC
-  #   value: "100"
-  # - name: AUTOMEMLIMIT
-  #   value: "0.9"
 
 extraVolumes: []
 extraVolumeMounts: []
-
-# ===========================================================================
-# nginx reverse proxy (optional)
-# Set nginx.enabled: false to deploy Alloy without the nginx sidecar chart.
-# ===========================================================================
-nginx:
-  enabled: true
-
-  # ---------------------------------------------------------------------------
-  # Image
-  # ---------------------------------------------------------------------------
-  image:
-    repository: nginx
-    tag: "1.26-alpine"
-    pullPolicy: IfNotPresent
-
-  # ---------------------------------------------------------------------------
-  # Vault agent injector annotations
-  # These go on the pod and tell Vault to inject the TLS cert, key, and
-  # htpasswd file before the nginx container starts.
-  # Adjust the role, paths, and templates to match your Vault setup.
-  # ---------------------------------------------------------------------------
-  vaultAnnotations:
-    vault.hashicorp.com/agent-inject: "true"
-    vault.hashicorp.com/role: "nginx"
-    # TLS cert
-    vault.hashicorp.com/agent-inject-secret-tls.crt: "secret/nginx/tls"
-    vault.hashicorp.com/agent-inject-template-tls.crt: |
-      {{- with secret "secret/nginx/tls" -}}
-      {{ .Data.data.tls_crt }}
-      {{- end }}
-    # TLS key
-    vault.hashicorp.com/agent-inject-secret-tls.key: "secret/nginx/tls"
-    vault.hashicorp.com/agent-inject-template-tls.key: |
-      {{- with secret "secret/nginx/tls" -}}
-      {{ .Data.data.tls_key }}
-      {{- end }}
-    # htpasswd
-    vault.hashicorp.com/agent-inject-secret-htpasswd: "secret/nginx/htpasswd"
-    vault.hashicorp.com/agent-inject-template-htpasswd: |
-      {{- with secret "secret/nginx/htpasswd" -}}
-      {{ .Data.data.htpasswd }}
-      {{- end }}
-
-  # ---------------------------------------------------------------------------
-  # Paths where Vault injects the secrets (must match templates above)
-  # ---------------------------------------------------------------------------
-  vault:
-    tlsCertPath:  "/vault/secrets/tls.crt"
-    tlsKeyPath:   "/vault/secrets/tls.key"
-    htpasswdPath: "/vault/secrets/htpasswd"
-
-  # ---------------------------------------------------------------------------
-  # Alloy upstream — the nginx config uses include "alloy.fullname" to
-  # automatically resolve the Alloy service name from the same release.
-  # Override otlpHttpPort / uiPort if you changed Alloy's service ports.
-  # ---------------------------------------------------------------------------
-  alloy:
-    otlpHttpPort: 4318
-    uiPort: 12345
-
-  # ---------------------------------------------------------------------------
-  # nginx config
-  # Rendered via tpl so Go template expressions are evaluated.
-  # Uses include "alloy.fullname" to auto-resolve the Alloy service name.
-  # Override the whole block if you need a different nginx configuration.
-  # ---------------------------------------------------------------------------
-  nginxConfig: |
-    events {
-      worker_connections 1024;
-    }
-
-    http {
-      # Silence health check noise in logs
-      map $request_uri $loggable {
-        /healthz  0;
-        default   1;
-      }
-      access_log /var/log/nginx/access.log combined if=$loggable;
-      error_log  /var/log/nginx/error.log warn;
-
-      server {
-        listen 443 ssl;
-        ssl_certificate     {{ .Values.nginx.vault.tlsCertPath }};
-        ssl_certificate_key {{ .Values.nginx.vault.tlsKeyPath }};
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        ssl_ciphers         HIGH:!aNULL:!MD5;
-
-        auth_basic           "Alloy";
-        auth_basic_user_file {{ .Values.nginx.vault.htpasswdPath }};
-
-        # Health check — no auth so probes work
-        location /healthz {
-          auth_basic off;
-          return 200 "ok";
-          add_header Content-Type text/plain;
-        }
-
-        # ── OTLP HTTP ──────────────────────────────────────────────────────
-        location /otlp/ {
-          proxy_pass http://{{ include "alloy.fullname" . }}:{{ .Values.nginx.alloy.otlpHttpPort }}/;
-          proxy_set_header Host              $host;
-          proxy_set_header X-Real-IP         $remote_addr;
-          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-        }
-
-        # ── Alloy debug UI ─────────────────────────────────────────────────
-        location /debug/ {
-          proxy_pass http://{{ include "alloy.fullname" . }}:{{ .Values.nginx.alloy.uiPort }}/;
-          proxy_set_header Host              $host;
-          proxy_set_header X-Real-IP         $remote_addr;
-          proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-          # Required for Alloy UI websocket connections
-          proxy_http_version 1.1;
-          proxy_set_header Upgrade    $http_upgrade;
-          proxy_set_header Connection "upgrade";
-        }
-      }
-    }
-
-  # ---------------------------------------------------------------------------
-  # Service — exposes nginx
-  # ---------------------------------------------------------------------------
-  service:
-    type: ClusterIP
-    ports:
-      - name: https
-        port: 443
-        targetPort: 443
-        protocol: TCP
-
-  # ---------------------------------------------------------------------------
-  # Deployment
-  # ---------------------------------------------------------------------------
-  replicaCount: 1
-
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
-      memory: 128Mi
-
-  serviceAccountName: ""
-
-  podAnnotations: {}
-
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 101    # nginx uid in the alpine image
-    runAsGroup: 101
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: true
-    capabilities:
-      drop: [ALL]
-      add: [NET_BIND_SERVICE]
-
-  # ---------------------------------------------------------------------------
-  # OpenShift Route
-  # ---------------------------------------------------------------------------
-  route:
-    hostname: "o11y-collector.dyn.net"
-
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}

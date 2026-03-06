@@ -1,0 +1,44 @@
+# ===========================================================================
+# alloy-prom — values.yaml
+#
+# Overrides for the alloy sub-chart. All keys live under alloy: to match
+# the dependency name declared in Chart.yaml.
+# ===========================================================================
+alloy:
+  config:
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      // Receive Prometheus remote write from the gateway (proxied as /api/v1/write)
+      prometheus.receive_http "default" {
+        http {
+          listen_address = "0.0.0.0"
+          listen_port    = 9009
+        }
+
+        output {
+          metrics = [prometheus.remote_write.default.receiver]
+        }
+      }
+
+      prometheus.remote_write "default" {
+        endpoint {
+          // Override url in values.yaml to point at your Prometheus / Mimir / Thanos
+          url = "http://prometheus:9090/api/v1/write"
+        }
+      }
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: alloy-ui
+        port: 12345
+        targetPort: 12345
+        protocol: TCP
+      - name: prom-http
+        port: 9009
+        targetPort: 9009
+        protocol: TCP

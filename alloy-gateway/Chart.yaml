@@ -1,0 +1,11 @@
+apiVersion: v2
+name: alloy-gateway
+description: >
+  nginx reverse proxy acting as the entry-point for the Alloy observability
+  stack. Routes inbound traffic to the appropriate backend Alloy deployment:
+    /otlp/*                 → alloy-otlp  (OTLP HTTP receiver, port 4318)
+    /prometheus/api/v1/push → alloy-prom  (Prometheus remote write, port 9009)
+  Completely independent of alloy-chart — no shared templates or dependencies.
+type: application
+version: 0.1.0
+appVersion: "1.26-alpine"
