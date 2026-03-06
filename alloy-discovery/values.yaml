@@ -9,6 +9,14 @@
 # ClusterRole externally if you need cross-namespace scraping.
 # ===========================================================================
 alloy:
+  workloadType: StatefulSet
+
+  persistence:
+    enabled: true
+    storageClass: sc-ontap-nas
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
   config:
     content: |-
       logging {

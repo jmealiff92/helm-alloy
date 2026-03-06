@@ -52,7 +52,14 @@ config:
 serviceAccountName: ""
 
 # ---------------------------------------------------------------------------
-# Deployment
+# Workload type: Deployment or StatefulSet
+# Use StatefulSet when you need stable storage (WAL, WAL replay, scrape state).
+# alloy-prom and alloy-discovery default to StatefulSet.
+# ---------------------------------------------------------------------------
+workloadType: Deployment
+
+# ---------------------------------------------------------------------------
+# Deployment / StatefulSet
 # ---------------------------------------------------------------------------
 replicaCount: 1
 
@@ -66,6 +73,25 @@ resources:
 
 # Storage path for Alloy's WAL / internal state
 storagePath: /var/lib/alloy
+
+# ---------------------------------------------------------------------------
+# Persistent storage — only active when workloadType is StatefulSet.
+#
+# Three modes:
+#   existingClaim set   → mount that PVC directly (no dynamic provisioning)
+#   enabled: true       → create a volumeClaimTemplate (dynamic provisioning)
+#   enabled: false      → emptyDir (ephemeral, same behaviour as Deployment)
+#
+# storageClass examples:
+#   ""              cluster default StorageClass
+#   "sc-ontap-nas"  NetApp ONTAP NAS (RWX-capable)
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: false
+  existingClaim: ""
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
 
 # ---------------------------------------------------------------------------
 # Service (ClusterIP)

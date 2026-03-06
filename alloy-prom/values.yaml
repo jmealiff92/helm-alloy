@@ -5,6 +5,14 @@
 # the dependency name declared in Chart.yaml.
 # ===========================================================================
 alloy:
+  workloadType: StatefulSet
+
+  persistence:
+    enabled: true
+    storageClass: sc-ontap-nas
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
   config:
     content: |-
       logging {
