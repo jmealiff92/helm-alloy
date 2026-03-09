@@ -49,20 +49,69 @@ Grafana Alloy v1.7.0. Serves two roles simultaneously:
 
 Child charts have no `templates/` directory of their own — only `Chart.yaml` and `values.yaml`.
 
-Key values:
+#### Values reference
+
+**Naming**
 
 | Value | Default | Description |
 |---|---|---|
-| `workloadType` | `Deployment` | `Deployment` or `StatefulSet` |
-| `config.content` | OTLP passthrough | Alloy River config rendered into a ConfigMap |
-| `service.ports` | UI + OTLP gRPC + OTLP HTTP | Ports exposed on the ClusterIP Service |
-| `serviceAccountName` | `""` | Creates a ServiceAccount when set |
-| `rbac.enabled` | `false` | Creates Role + RoleBinding for the ServiceAccount |
-| `rbac.rules` | `[]` | RBAC policy rules |
-| `route.enabled` | `false` | Render an OpenShift Route |
-| `persistence.*` | see below | Persistent storage (StatefulSet only) |
+| `nameOverride` | `""` | Override the chart name component used in resource names |
+| `fullnameOverride` | `""` | Fully override the resource name; takes precedence over all other naming logic |
 
-#### Persistent storage (`workloadType: StatefulSet`)
+**Image**
+
+| Value | Default | Description |
+|---|---|---|
+| `image.repository` | `grafana/alloy` | Container image repository |
+| `image.tag` | `v1.7.0` | Image tag |
+| `image.pullPolicy` | `IfNotPresent` | Kubernetes image pull policy |
+
+**Workload**
+
+| Value | Default | Description |
+|---|---|---|
+| `workloadType` | `Deployment` | `Deployment` for stateless; `StatefulSet` for stable storage |
+| `replicaCount` | `1` | Number of replicas. Ignored when `autoscaling.enabled: true` and `workloadType: Deployment` |
+
+**Horizontal Pod Autoscaler**
+
+Only rendered when `workloadType` is `Deployment`. Setting `autoscaling.enabled: true` on a StatefulSet has no effect (HPAs are not appropriate for StatefulSets). When enabled, the `replicas` field is omitted from the Deployment spec so the HPA has full control.
+
+| Value | Default | Description |
+|---|---|---|
+| `autoscaling.enabled` | `false` | Create an HPA for the Deployment |
+| `autoscaling.minReplicas` | `1` | Minimum replica count |
+| `autoscaling.maxReplicas` | `5` | Maximum replica count |
+| `autoscaling.targetCPUUtilizationPercentage` | `80` | CPU utilization target (%). Leave empty to omit the CPU metric |
+| `autoscaling.targetMemoryUtilizationPercentage` | `""` | Memory utilization target (%). Leave empty to omit the memory metric |
+
+```yaml
+# Enable HPA with CPU scaling only
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: ""
+```
+
+**Resources**
+
+| Value | Default | Description |
+|---|---|---|
+| `resources.requests.cpu` | `100m` | CPU request |
+| `resources.requests.memory` | `128Mi` | Memory request |
+| `resources.limits.cpu` | `500m` | CPU limit |
+| `resources.limits.memory` | `512Mi` | Memory limit |
+
+**Alloy config**
+
+| Value | Default | Description |
+|---|---|---|
+| `config.content` | OTLP passthrough | River config rendered verbatim into a ConfigMap. Pods roll automatically on change via a `checksum/config` annotation |
+| `storagePath` | `/var/lib/alloy` | Mount path for Alloy's WAL / internal state |
+
+**Persistent storage** — only active when `workloadType: StatefulSet`
 
 Three modes — select exactly one:
 
@@ -72,14 +121,60 @@ Three modes — select exactly one:
 | Existing PVC | `persistence.existingClaim: <name>` | Named PVC mounted directly as a volume |
 | Ephemeral | `persistence.enabled: false` (default) | `emptyDir` — data lost on pod restart |
 
+| Value | Default | Description |
+|---|---|---|
+| `persistence.enabled` | `false` | Create a `volumeClaimTemplate` for dynamic PVC provisioning |
+| `persistence.existingClaim` | `""` | Mount this named PVC directly (disables dynamic provisioning) |
+| `persistence.storageClass` | `""` | StorageClass name; `""` uses the cluster default |
+| `persistence.accessMode` | `ReadWriteOnce` | PVC access mode |
+| `persistence.size` | `10Gi` | PVC storage request |
+
 ```yaml
 # Dynamic PVC from NetApp ONTAP NAS StorageClass
 persistence:
   enabled: true
-  storageClass: sc-ontap-nas   # "" = cluster default
+  storageClass: sc-ontap-nas
   accessMode: ReadWriteOnce
   size: 10Gi
 ```
+
+**Service**
+
+| Value | Default | Description |
+|---|---|---|
+| `service.type` | `ClusterIP` | Kubernetes Service type |
+| `service.ports` | UI :12345, OTLP gRPC :4317, OTLP HTTP :4318 | List of `{name, port, targetPort, protocol}` objects |
+
+**OpenShift Route**
+
+| Value | Default | Description |
+|---|---|---|
+| `route.enabled` | `false` | Render an OpenShift Route resource |
+| `route.hostname` | `""` | Hostname for the Route; empty lets OpenShift assign one |
+| `route.termination` | `edge` | TLS termination mode (`edge`, `reencrypt`, `passthrough`) |
+| `route.targetPort` | `alloy-ui` | Named port on the Service to route traffic to |
+
+**Identity & RBAC**
+
+| Value | Default | Description |
+|---|---|---|
+| `serviceAccountName` | `""` | Creates a ServiceAccount with this name when set; pods bind to it. Leave empty to use the namespace default |
+| `rbac.enabled` | `false` | Create a namespace-scoped Role and RoleBinding for the ServiceAccount. Requires `serviceAccountName` to be set |
+| `rbac.rules` | `[]` | RBAC policy rules (list of `{apiGroups, resources, verbs}` objects) |
+
+**Pod extras**
+
+| Value | Default | Description |
+|---|---|---|
+| `podAnnotations` | `{}` | Extra annotations added to the pod template |
+| `securityContext` | non-root, read-only FS, drop ALL | Container security context applied to the Alloy container |
+| `nodeSelector` | `{}` | Node selector constraints |
+| `tolerations` | `[]` | Pod tolerations |
+| `affinity` | `{}` | Pod affinity / anti-affinity rules |
+| `extraArgs` | `[]` | Additional arguments appended to the `alloy run` command |
+| `extraEnv` | `[GOMAXPROCS from limits.cpu]` | Extra environment variables injected into the Alloy container |
+| `extraVolumes` | `[]` | Additional volumes added to the pod spec |
+| `extraVolumeMounts` | `[]` | Additional volume mounts added to the Alloy container |
 
 ---
 
