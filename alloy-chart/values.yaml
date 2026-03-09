@@ -6,6 +6,9 @@
 #               values under the alloy: key in its own values.yaml.
 # ===========================================================================
 
+nameOverride: ""
+fullnameOverride: ""
+
 # ---------------------------------------------------------------------------
 # Image
 # ---------------------------------------------------------------------------
@@ -62,6 +65,19 @@ workloadType: Deployment
 # Deployment / StatefulSet
 # ---------------------------------------------------------------------------
 replicaCount: 1
+
+# ---------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# Only applies when workloadType is Deployment. Ignored for StatefulSet.
+# When enabled, the Deployment's replicas field is omitted so the HPA
+# has full control over the replica count.
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: ""
 
 resources:
   requests:

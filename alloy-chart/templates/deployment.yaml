@@ -14,7 +14,9 @@ metadata:
   labels:
     {{- include "alloy.labels" . | nindent 4 }}
 spec:
+  {{- if not (and .Values.autoscaling.enabled (not $isStatefulSet)) }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   {{- if $isStatefulSet }}
   serviceName: {{ include "alloy.fullname" . }}
   {{- end }}
