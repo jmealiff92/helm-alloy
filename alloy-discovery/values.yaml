@@ -1,0 +1,78 @@
+# ===========================================================================
+# alloy-discovery — values.yaml
+#
+# Overrides for the alloy sub-chart. All keys live under alloy: to match
+# the dependency name declared in Chart.yaml.
+#
+# RBAC note: a namespace-scoped Role is created granting read access to the
+# Kubernetes resources Alloy needs for service discovery. Flip to a
+# ClusterRole externally if you need cross-namespace scraping.
+# ===========================================================================
+alloy:
+  workloadType: StatefulSet
+
+  persistence:
+    enabled: true
+    storageClass: sc-ontap-nas
+    accessMode: ReadWriteOnce
+    size: 10Gi
+
+  config:
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      // ── Pod discovery ────────────────────────────────────────────────────────
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      // ── Service discovery ────────────────────────────────────────────────────
+      discovery.kubernetes "services" {
+        role = "service"
+      }
+
+      // ── Scrape discovered targets ────────────────────────────────────────────
+      prometheus.scrape "kubernetes" {
+        targets = concat(
+          discovery.kubernetes.pods.targets,
+          discovery.kubernetes.services.targets,
+        )
+
+        scrape_interval = "30s"
+
+        forward_to = [prometheus.remote_write.default.receiver]
+      }
+
+      // ── Forward scraped metrics ──────────────────────────────────────────────
+      prometheus.remote_write "default" {
+        endpoint {
+          // Override url in values.yaml to point at your Prometheus / Mimir / Thanos
+          url = "http://prometheus:9090/api/v1/write"
+        }
+      }
+
+  serviceAccountName: alloy-discovery
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: alloy-ui
+        port: 12345
+        targetPort: 12345
+        protocol: TCP
+
+  rbac:
+    enabled: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "endpoints", "configmaps", "namespaces"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["ingresses"]
+        verbs: ["get", "list", "watch"]

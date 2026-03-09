@@ -1,0 +1,169 @@
+# ===========================================================================
+# alloy-gateway — values.yaml
+#
+# Standalone nginx deployment that routes observability traffic to the
+# correct Alloy backend based on request path.
+#
+# Backend routing (path-based, single TLS listener on 443):
+#   /otlp/*                 → alloy-otlp service : 4318   (OTLP HTTP)
+#   /prometheus/api/v1/push → alloy-prom service : 9009   (Prometheus remote write)
+#   /healthz                → 200 OK (no auth — used by readiness/liveness probes)
+#
+# TLS certificate, private key, and htpasswd file are injected by the
+# Vault Agent Injector at runtime.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: nginx
+  tag: "1.26-alpine"
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Deployment
+# ---------------------------------------------------------------------------
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+serviceAccountName: ""
+
+# ---------------------------------------------------------------------------
+# Backend service references
+# ---------------------------------------------------------------------------
+backends:
+  otlp:
+    service: alloy-otlp
+    port: 4318
+    # namespace: monitoring   # uncomment to override
+  prom:
+    service: alloy-prom
+    port: 9009
+    # namespace: monitoring   # uncomment to override
+
+# ---------------------------------------------------------------------------
+# Vault agent injector annotations
+# ---------------------------------------------------------------------------
+vaultAnnotations:
+  vault.hashicorp.com/agent-inject: "true"
+  vault.hashicorp.com/role: "nginx"
+  vault.hashicorp.com/agent-inject-secret-tls.crt: "secret/nginx/tls"
+  vault.hashicorp.com/agent-inject-template-tls.crt: |
+    {{- with secret "secret/nginx/tls" -}}
+    {{ .Data.data.tls_crt }}
+    {{- end }}
+  vault.hashicorp.com/agent-inject-secret-tls.key: "secret/nginx/tls"
+  vault.hashicorp.com/agent-inject-template-tls.key: |
+    {{- with secret "secret/nginx/tls" -}}
+    {{ .Data.data.tls_key }}
+    {{- end }}
+  vault.hashicorp.com/agent-inject-secret-htpasswd: "secret/nginx/htpasswd"
+  vault.hashicorp.com/agent-inject-template-htpasswd: |
+    {{- with secret "secret/nginx/htpasswd" -}}
+    {{ .Data.data.htpasswd }}
+    {{- end }}
+
+vault:
+  tlsCertPath:  "/vault/secrets/tls.crt"
+  tlsKeyPath:   "/vault/secrets/tls.key"
+  htpasswdPath: "/vault/secrets/htpasswd"
+
+# ---------------------------------------------------------------------------
+# nginx configuration
+# Rendered via tpl so Go template expressions are evaluated.
+# ---------------------------------------------------------------------------
+nginxConfig: |
+  events {
+    worker_connections 1024;
+  }
+
+  http {
+    map $request_uri $loggable {
+      /healthz  0;
+      default   1;
+    }
+    access_log /var/log/nginx/access.log combined if=$loggable;
+    error_log  /var/log/nginx/error.log warn;
+
+    server {
+      listen 443 ssl;
+      ssl_certificate     {{ .Values.vault.tlsCertPath }};
+      ssl_certificate_key {{ .Values.vault.tlsKeyPath }};
+      ssl_protocols       TLSv1.2 TLSv1.3;
+      ssl_ciphers         HIGH:!aNULL:!MD5;
+
+      auth_basic           "Alloy Gateway";
+      auth_basic_user_file {{ .Values.vault.htpasswdPath }};
+
+      # ── Health check — no auth so probes work ────────────────────────────
+      location /healthz {
+        auth_basic off;
+        return 200 "ok";
+        add_header Content-Type text/plain;
+      }
+
+      # ── OTLP HTTP (forwarded to alloy-otlp:4318) ─────────────────────────
+      location /otlp/ {
+        {{- $otlpNs := (.Values.backends.otlp.namespace | default .Release.Namespace) }}
+        proxy_pass http://{{ .Values.backends.otlp.service }}.{{ $otlpNs }}.svc.cluster.local:{{ .Values.backends.otlp.port }}/;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      # ── Prometheus remote write (forwarded to alloy-prom:9009) ───────────
+      location /prometheus/api/v1/push {
+        {{- $promNs := (.Values.backends.prom.namespace | default .Release.Namespace) }}
+        proxy_pass http://{{ .Values.backends.prom.service }}.{{ $promNs }}.svc.cluster.local:{{ .Values.backends.prom.port }}/api/v1/write;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }
+  }
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+
+# ---------------------------------------------------------------------------
+# OpenShift Route
+# ---------------------------------------------------------------------------
+route:
+  hostname: "o11y-collector.dyn.net"
+
+# ---------------------------------------------------------------------------
+# Pod extras
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+    add: [NET_BIND_SERVICE]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

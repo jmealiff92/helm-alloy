@@ -1,0 +1,4 @@
+# Helm dependency artifacts — run `helm dependency update ./<chart>` to populate
+alloy-otlp/charts/
+alloy-prom/charts/
+alloy-discovery/charts/

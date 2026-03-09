@@ -1,0 +1,14 @@
+apiVersion: v2
+name: alloy-discovery
+description: >
+  Grafana Alloy configured for Kubernetes service discovery and scraping.
+  Uses alloy-chart as a dependency; all resources (Deployment, Service,
+  ConfigMap, ServiceAccount, Role, RoleBinding) are rendered by the sub-chart.
+  Override alloy.config.content, alloy.serviceAccountName, and alloy.rbac here.
+type: application
+version: 0.1.0
+appVersion: "1.7.0"
+dependencies:
+  - name: alloy
+    version: 0.1.0
+    repository: file://../alloy-chart
